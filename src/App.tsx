@@ -1,11 +1,27 @@
-import React, { useState } from 'react';
+import  { useState } from 'react';
 import { Shuffle, Copy, RotateCcw, Zap } from 'lucide-react';
 
+// Add this new interface for Reddit API responses
+interface RedditRantResponse {
+  success: boolean;
+  rant: {
+    title: string;
+    content: string;
+    subreddit: string; 
+    score: number;
+    url: string;
+  };
+  using_live_data: boolean;
+}
+
+// Update your existing RantData interface to include source
 interface RantData {
   id: number;
   rant: string;
   poem: string;
+  source?: string; // Add this line
 }
+
 
 const hardcodedRants: RantData[] = [
   {
@@ -55,17 +71,77 @@ function App() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinCount, setSpinCount] = useState(0);
   const [copiedText, setCopiedText] = useState<string>('');
+  const generatePoem = async (rantText: string): Promise<string> => {
+    try {
+      return generateSimplePoem(rantText);
+    } catch (error) {
+      console.error('Poem generation error:', error);
+      return generateSimplePoem(rantText);
+    }
+  };
+  
+  const generateSimplePoem = (rantText: string): string => {
+    const emotionWords = ['angry', 'frustrated', 'annoying', 'hate', 'love', 'beautiful'];
+    const foundEmotions = emotionWords.filter(word => 
+      rantText.toLowerCase().includes(word)
+    );
+    
+    const poemTemplates = [
+      `Oh world of frustration and endless dismay,
+  Where ${foundEmotions[0] || 'anger'} rules both night and day,
+  Let patience flow like a gentle stream,
+  And turn your ${foundEmotions[1] || 'frustration'} into a peaceful dream.`,
+      
+      `In the realm where complaints do dwell,
+  Your passionate words ring like a bell,
+  Though ${foundEmotions[0] || 'irritation'} may cloud your sight,
+  Beauty emerges when we shed some light.`,
+      
+      `From depths of ${foundEmotions[0] || 'annoyance'} comes this tale,
+  Where ordinary moments often fail,
+  But in your words, though fierce they may be,
+  Lies poetry for all the world to see.`
+    ];
+    
+    return poemTemplates[Math.floor(Math.random() * poemTemplates.length)];
+  };
 
-  const spinRant = () => {
+  const spinRant = async () => {
     setIsSpinning(true);
     
-    // Simulate spinning animation delay
-    setTimeout(() => {
+    try {
+      // Fetch real Reddit rant from your API
+      const response = await fetch('http://localhost:5001/api/rant');
+      const data: RedditRantResponse = await response.json();
+      
+      if (data.success && data.rant) {
+        const rant = data.rant;
+        
+        // Create a poem using AI
+        const poem = await generatePoem(rant.content);
+        
+        setCurrentRant({
+          id: Date.now(),
+          rant: `${rant.title}\n\n${rant.content}`,
+          poem: poem,
+          source: `r/${rant.subreddit} • ${rant.score} upvotes`
+        });
+      } else {
+        throw new Error('API returned no rant data');
+      }
+    } catch (error) {
+      console.error('API Error:', error);
+      // Fallback to hardcoded rants
       const randomIndex = Math.floor(Math.random() * hardcodedRants.length);
-      setCurrentRant(hardcodedRants[randomIndex]);
-      setSpinCount(prev => prev + 1);
-      setIsSpinning(false);
-    }, 1000);
+      const fallbackRant = hardcodedRants[randomIndex];
+      setCurrentRant({
+        ...fallbackRant,
+        source: 'Sample Data'
+      });
+    }
+    
+    setSpinCount(prev => prev + 1);
+    setIsSpinning(false);
   };
 
   const copyToClipboard = async (text: string, type: string) => {
