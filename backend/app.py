@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from reddit_scraper import RedditRantScraper, FallbackRantScraper
+from aiPoem import convert_rant_to_poem_mistral_new
 import os
 from dotenv import load_dotenv
 
@@ -72,28 +73,129 @@ def get_multiple_rants():
             'using_live_data': use_main_scraper
         }), 500
 
+@app.route('/api/poem', methods=['POST'])
+def generate_poem():
+    """Generate a poem from a rant text."""
+    try:
+        data = request.get_json()
+        
+        if not data or 'rant_text' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'rant_text is required in request body'
+            }), 400
+        
+        rant_text = data['rant_text']
+        
+        if not rant_text.strip():
+            return jsonify({
+                'success': False,
+                'error': 'rant_text cannot be empty'
+            }), 400
+        
+        # Generate the poem using the AI
+        poem = convert_rant_to_poem_mistral_new(rant_text)
+        
+        # Check if there was an error in poem generation
+        if poem.startswith("Error:") or poem.startswith("The muses are silent") or poem.startswith("The poet's ink ran dry"):
+            return jsonify({
+                'success': False,
+                'error': poem
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'original_rant': rant_text,
+            'poem': poem
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
+@app.route('/api/rant-and-poem', methods=['GET'])
+def get_rant_and_poem():
+    """Get a random rant and generate a poem from it."""
+    try:
+        # First get a random rant
+        rant = scraper.get_random_rant()
+        if not rant:
+            return jsonify({
+                'success': False,
+                'error': 'No rant found',
+                'using_live_data': use_main_scraper
+            }), 404
+        
+        # Combine title and content for the poem generation
+        full_rant_text = f"{rant['title']}. {rant['content']}"
+        
+        # Generate the poem
+        poem = convert_rant_to_poem_mistral_new(full_rant_text)
+        
+        # Check if there was an error in poem generation
+        if poem.startswith("Error:") or poem.startswith("The muses are silent") or poem.startswith("The poet's ink ran dry"):
+            # Return rant without poem if AI fails
+            return jsonify({
+                'success': True,
+                'rant': rant,
+                'poem': None,
+                'poem_error': poem,
+                'using_live_data': use_main_scraper
+            })
+        
+        return jsonify({
+            'success': True,
+            'rant': rant,
+            'poem': poem,
+            'using_live_data': use_main_scraper
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'using_live_data': use_main_scraper
+        }), 500
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint."""
+    # Check if HF token is configured
+    hf_token_configured = bool(os.getenv('HF_TOKEN'))
+    
     return jsonify({
         'status': 'healthy',
         'scraper_type': 'live' if use_main_scraper else 'fallback',
+        'ai_poem_configured': hf_token_configured,
         'message': 'Reddit Rant Scraper API is running'
     })
 
 @app.route('/api/setup-info', methods=['GET'])
 def setup_info():
     """Provide setup information for the API."""
+    hf_token_configured = bool(os.getenv('HF_TOKEN'))
+    
     return jsonify({
         'using_live_data': use_main_scraper,
         'reddit_api_configured': bool(os.getenv('REDDIT_CLIENT_ID') and os.getenv('REDDIT_CLIENT_SECRET')),
+        'ai_poem_configured': hf_token_configured,
         'setup_instructions': {
-            'step1': 'Go to https://www.reddit.com/prefs/apps',
-            'step2': 'Click "Create App" or "Create Another App"',
-            'step3': 'Choose "script" for the app type',
-            'step4': 'Copy the client ID and secret to your .env file',
-            'step5': 'Restart the server'
-        } if not use_main_scraper else None
+            'reddit': {
+                'step1': 'Go to https://www.reddit.com/prefs/apps',
+                'step2': 'Click "Create App" or "Create Another App"',
+                'step3': 'Choose "script" for the app type',
+                'step4': 'Copy the client ID and secret to your .env file',
+                'step5': 'Restart the server'
+            } if not use_main_scraper else None,
+            'huggingface': {
+                'step1': 'Go to https://huggingface.co/settings/tokens',
+                'step2': 'Create a new token with "Read" permissions',
+                'step3': 'Add HF_TOKEN=your_token_here to your .env file',
+                'step4': 'Restart the server'
+            } if not hf_token_configured else None
+        }
     })
 
 if __name__ == '__main__':

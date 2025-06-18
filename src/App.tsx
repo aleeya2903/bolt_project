@@ -14,14 +14,29 @@ interface RedditRantResponse {
   using_live_data: boolean;
 }
 
+// New interface for the combined rant-and-poem API
+interface RantAndPoemResponse {
+  success: boolean;
+  rant: {
+    title: string;
+    content: string;
+    subreddit: string; 
+    score: number;
+    url: string;
+  };
+  poem: string | null;
+  poem_error?: string;
+  using_live_data: boolean;
+}
+
 // Update your existing RantData interface to include source
 interface RantData {
   id: number;
   rant: string;
   poem: string;
-  source?: string; // Add this line
+  source?: string;
+  isAI?: boolean; // Add this to track if poem is AI-generated
 }
-
 
 const hardcodedRants: RantData[] = [
   {
@@ -71,15 +86,8 @@ function App() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinCount, setSpinCount] = useState(0);
   const [copiedText, setCopiedText] = useState<string>('');
-  const generatePoem = async (rantText: string): Promise<string> => {
-    try {
-      return generateSimplePoem(rantText);
-    } catch (error) {
-      console.error('Poem generation error:', error);
-      return generateSimplePoem(rantText);
-    }
-  };
   
+  // Fallback simple poem generator (only used if AI fails)
   const generateSimplePoem = (rantText: string): string => {
     const emotionWords = ['angry', 'frustrated', 'annoying', 'hate', 'love', 'beautiful'];
     const foundEmotions = emotionWords.filter(word => 
@@ -88,19 +96,19 @@ function App() {
     
     const poemTemplates = [
       `Oh world of frustration and endless dismay,
-  Where ${foundEmotions[0] || 'anger'} rules both night and day,
-  Let patience flow like a gentle stream,
-  And turn your ${foundEmotions[1] || 'frustration'} into a peaceful dream.`,
+Where ${foundEmotions[0] || 'anger'} rules both night and day,
+Let patience flow like a gentle stream,
+And turn your ${foundEmotions[1] || 'frustration'} into a peaceful dream.`,
       
       `In the realm where complaints do dwell,
-  Your passionate words ring like a bell,
-  Though ${foundEmotions[0] || 'irritation'} may cloud your sight,
-  Beauty emerges when we shed some light.`,
+Your passionate words ring like a bell,
+Though ${foundEmotions[0] || 'irritation'} may cloud your sight,
+Beauty emerges when we shed some light.`,
       
       `From depths of ${foundEmotions[0] || 'annoyance'} comes this tale,
-  Where ordinary moments often fail,
-  But in your words, though fierce they may be,
-  Lies poetry for all the world to see.`
+Where ordinary moments often fail,
+But in your words, though fierce they may be,
+Lies poetry for all the world to see.`
     ];
     
     return poemTemplates[Math.floor(Math.random() * poemTemplates.length)];
@@ -110,33 +118,41 @@ function App() {
     setIsSpinning(true);
     
     try {
-      // Fetch real Reddit rant from your API
-      const response = await fetch('http://localhost:5001/api/rant');
-      const data: RedditRantResponse = await response.json();
+      // Try to fetch rant AND poem from our new AI-powered endpoint
+      const response = await fetch('http://localhost:5001/api/rant-and-poem');
+      const data: RantAndPoemResponse = await response.json();
       
       if (data.success && data.rant) {
         const rant = data.rant;
+        let poem = data.poem;
+        let isAI = true;
         
-        // Create a poem using AI
-        const poem = await generatePoem(rant.content);
+        // If AI poem generation failed, use our fallback
+        if (!poem || data.poem_error) {
+          console.warn('AI poem generation failed:', data.poem_error);
+          poem = generateSimplePoem(rant.content);
+          isAI = false;
+        }
         
         setCurrentRant({
           id: Date.now(),
           rant: `${rant.title}\n\n${rant.content}`,
           poem: poem,
-          source: `r/${rant.subreddit} • ${rant.score} upvotes`
+          source: `r/${rant.subreddit} • ${rant.score} upvotes`,
+          isAI: isAI
         });
       } else {
         throw new Error('API returned no rant data');
       }
     } catch (error) {
       console.error('API Error:', error);
-      // Fallback to hardcoded rants
+      // Ultimate fallback to hardcoded rants
       const randomIndex = Math.floor(Math.random() * hardcodedRants.length);
       const fallbackRant = hardcodedRants[randomIndex];
       setCurrentRant({
         ...fallbackRant,
-        source: 'Sample Data'
+        source: 'Sample Data',
+        isAI: false
       });
     }
     
@@ -239,6 +255,11 @@ function App() {
                 {currentRant.rant}
               </p>
             </div>
+            {currentRant.source && (
+              <p className="text-yellow-300 text-sm mt-2 font-bold">
+                📍 Source: {currentRant.source}
+              </p>
+            )}
             {copiedText === 'rant' && (
               <p className="text-yellow-300 text-sm mt-2 font-bold animate-pulse">
                 ✨ Rant copied to clipboard!
@@ -250,7 +271,7 @@ function App() {
           <div className="bg-gradient-to-br from-emerald-600 to-teal-600 rounded-3xl p-6 shadow-2xl transform hover:scale-105 transition-transform duration-300">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-3xl font-black text-white flex items-center">
-                🎭 THE POEM
+                {currentRant.isAI ? '🤖 AI POEM' : '🎭 THE POEM'}
               </h2>
               <button
                 onClick={() => copyToClipboard(currentRant.poem, 'poem')}
@@ -265,6 +286,16 @@ function App() {
                 {currentRant.poem}
               </p>
             </div>
+            {currentRant.isAI && (
+              <p className="text-cyan-300 text-sm mt-2 font-bold">
+                ✨ Generated by Mistral-7B AI
+              </p>
+            )}
+            {!currentRant.isAI && (
+              <p className="text-yellow-300 text-sm mt-2 font-bold">
+                📝 Template-generated (AI unavailable)
+              </p>
+            )}
             {copiedText === 'poem' && (
               <p className="text-yellow-300 text-sm mt-2 font-bold animate-pulse">
                 ✨ Poem copied to clipboard!
@@ -282,6 +313,9 @@ function App() {
             <p className="text-2xl font-black text-white">
               🎰 SPINNING THE WHEEL OF RAGE... 🎰
             </p>
+            <p className="text-lg text-gray-200 mt-2">
+              🤖 AI is crafting your poetry...
+            </p>
           </div>
         </div>
       )}
@@ -294,10 +328,10 @@ function App() {
               🎲 Ready to Transform Rage into Art? 🎲
             </h3>
             <p className="text-xl text-gray-200 font-medium mb-4">
-              Click the button above to generate a random internet rant and watch it transform into beautiful poetry!
+              Click the button above to generate a random internet rant and watch AI transform it into beautiful poetry!
             </p>
             <p className="text-lg text-gray-300 font-medium">
-              📚 Featuring curated rants about life's most annoying moments
+              🤖 Powered by Mistral-7B AI • 📚 Live Reddit data
             </p>
           </div>
         </div>
