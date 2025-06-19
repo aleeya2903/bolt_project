@@ -1,6 +1,7 @@
 """
 Cache Manager for Reddit Rant Roulette
 Pre-generates and caches rant-poem pairs for instant serving
+Optimized for Gemini AI rate limits
 """
 import threading
 import time
@@ -13,7 +14,7 @@ import random
 import logging
 
 from reddit_scraper import RedditRantScraper, FallbackRantScraper
-from aiPoem import convert_rant_to_poem_mistral_new
+from aiPoem import convert_rant_to_poem_gemini
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,14 +23,20 @@ logger = logging.getLogger(__name__)
 class RantPoemCache:
     """
     High-performance cache system for rant-poem pairs
+    Optimized for Gemini AI rate limits
     Features:
     - Pre-generates content in background
     - Maintains hot cache of ready-to-serve pairs
-    - Intelligent cache warming
+    - Intelligent cache warming with rate limiting
     - Graceful fallbacks
     """
     
-    def __init__(self, target_cache_size=20, min_cache_size=5):
+    def __init__(self, target_cache_size=10, min_cache_size=3):
+        """
+        Initialize cache with reduced sizes for Gemini AI rate limits
+        target_cache_size: Reduced from 20 to 10
+        min_cache_size: Reduced from 5 to 3
+        """
         self.target_cache_size = target_cache_size
         self.min_cache_size = min_cache_size
         
@@ -71,15 +78,15 @@ class RantPoemCache:
         # Start the background cache warming
         self.start_background_worker()
         
-        # Initial cache warm-up (blocking)
+        # Initial cache warm-up (blocking) - reduced for rate limits
         self._initial_warmup()
     
     def _initial_warmup(self):
         """Initial synchronous cache warming to ensure we have some content"""
-        logger.info("🔥 Starting initial cache warm-up...")
+        logger.info("🔥 Starting initial cache warm-up (reduced for Gemini rate limits)...")
         
-        # Generate a few items synchronously for immediate availability
-        warmup_items = min(3, self.min_cache_size)
+        # Generate fewer items synchronously for immediate availability
+        warmup_items = min(2, self.min_cache_size)  # Reduced from 3
         for i in range(warmup_items):
             try:
                 item = self._generate_single_item()
@@ -89,6 +96,11 @@ class RantPoemCache:
                     logger.info(f"✅ Initial warm-up item {i+1}/{warmup_items} generated")
                 else:
                     logger.warning(f"⚠️ Failed to generate initial warm-up item {i+1}")
+                
+                # Add delay between initial generations for rate limiting
+                if i < warmup_items - 1:
+                    time.sleep(10)  # 10 second delay between initial generations
+                    
             except Exception as e:
                 logger.error(f"❌ Error during initial warm-up: {e}")
         
@@ -128,24 +140,24 @@ class RantPoemCache:
                 logger.warning("⚠️ No rant available from scraper")
                 return None
             
-            # Generate poem with timeout and retry logic
+            # Generate poem with Gemini AI
             full_rant_text = f"{rant['title']}. {rant['content']}"
             
-            # Check if AI is available
-            if os.getenv('HF_TOKEN'):
+            # Check if Gemini AI is available
+            if os.getenv('GEMINI_API_KEY'):
                 try:
-                    poem = convert_rant_to_poem_mistral_new(full_rant_text)
+                    poem = convert_rant_to_poem_gemini(full_rant_text)
                     
                     # Check if AI generation actually worked
-                    if poem.startswith("Error:") or poem.startswith("The muses are silent") or poem.startswith("The poet's ink ran dry"):
-                        logger.warning(f"⚠️ AI generation failed: {poem[:50]}...")
+                    if poem.startswith("Error:") or poem.startswith("The muses are silent"):
+                        logger.warning(f"⚠️ Gemini AI generation failed: {poem[:50]}...")
                         poem = self._generate_fallback_poem(full_rant_text)
                         is_ai = False
                     else:
                         is_ai = True
-                        logger.info("🤖 AI poem generated successfully")
+                        logger.info("🤖 Gemini AI poem generated successfully")
                 except Exception as e:
-                    logger.error(f"❌ AI generation error: {e}")
+                    logger.error(f"❌ Gemini AI generation error: {e}")
                     poem = self._generate_fallback_poem(full_rant_text)
                     is_ai = False
             else:
@@ -196,8 +208,8 @@ Lies poetry for all the world to see."""
         return random.choice(poem_templates)
     
     def _background_worker(self):
-        """Background thread that continuously fills the cache"""
-        logger.info("🔄 Background cache worker started")
+        """Background thread that continuously fills the cache with increased delays for Gemini rate limits"""
+        logger.info("🔄 Background cache worker started (Gemini AI rate-limited mode)")
         
         while not self._stop_worker.is_set():
             try:
@@ -216,20 +228,20 @@ Lies poetry for all the world to see."""
                     else:
                         logger.warning("⚠️ Failed to generate cache item")
                 
-                # Sleep before next generation attempt
-                # Longer sleep if cache is full, shorter if cache is low
+                # Increased sleep times for Gemini AI rate limits
                 if current_size >= self.target_cache_size:
-                    sleep_time = 30  # 30 seconds when cache is full
+                    sleep_time = 60   # 60 seconds when cache is full (increased from 30)
                 elif current_size < self.min_cache_size:
-                    sleep_time = 5   # 5 seconds when cache is critically low
+                    sleep_time = 15   # 15 seconds when cache is critically low (increased from 5)
                 else:
-                    sleep_time = 15  # 15 seconds when cache is moderate
+                    sleep_time = 30   # 30 seconds when cache is moderate (increased from 15)
                 
+                logger.info(f"💤 Waiting {sleep_time}s before next generation (rate limiting)")
                 self._stop_worker.wait(sleep_time)
                 
             except Exception as e:
                 logger.error(f"❌ Background worker error: {e}")
-                self._stop_worker.wait(10)  # Wait 10s on error
+                self._stop_worker.wait(20)  # Wait 20s on error (increased from 10)
         
         logger.info("🔄 Background cache worker stopped")
     
@@ -265,11 +277,11 @@ Lies poetry for all the world to see."""
         return self.stats.copy()
     
     def warm_cache(self, count: int = None) -> int:
-        """Manually warm the cache with specified number of items"""
+        """Manually warm the cache with specified number of items (with rate limiting)"""
         if count is None:
             count = self.target_cache_size
         
-        logger.info(f"🔥 Manual cache warming: generating {count} items...")
+        logger.info(f"🔥 Manual cache warming: generating {count} items with rate limiting...")
         
         generated = 0
         for i in range(count):
@@ -281,6 +293,11 @@ Lies poetry for all the world to see."""
                 logger.info(f"✅ Generated cache item {i+1}/{count}")
             else:
                 logger.warning(f"⚠️ Failed to generate cache item {i+1}/{count}")
+            
+            # Add delay between manual generations for rate limiting
+            if i < count - 1:
+                logger.info(f"💤 Rate limiting: waiting 10s before next generation...")
+                time.sleep(10)
         
         logger.info(f"🎯 Cache warming complete: {generated}/{count} items generated")
         return generated
@@ -305,8 +322,8 @@ def get_cache_manager() -> RantPoemCache:
         _cache_instance = RantPoemCache()
     return _cache_instance
 
-def initialize_cache(target_size=20, min_size=5):
-    """Initialize the global cache with specific parameters"""
+def initialize_cache(target_size=10, min_size=3):
+    """Initialize the global cache with Gemini-optimized parameters"""
     global _cache_instance
     if _cache_instance is not None:
         _cache_instance.stop_background_worker()
@@ -316,13 +333,13 @@ def initialize_cache(target_size=20, min_size=5):
 
 if __name__ == "__main__":
     # Test the cache system
-    print("🧪 Testing Cache Manager")
+    print("🧪 Testing Cache Manager (Gemini AI Optimized)")
     print("=" * 50)
     
     cache = RantPoemCache(target_cache_size=5, min_cache_size=2)
     
     # Test getting cached items
-    for i in range(10):
+    for i in range(5):  # Reduced test iterations
         print(f"\n🎯 Test {i+1}: Getting cached item...")
         item = cache.get_cached_rant_poem()
         
@@ -334,8 +351,9 @@ if __name__ == "__main__":
         else:
             print("❌ No cached item available")
         
-        # Wait a bit between requests
-        time.sleep(2)
+        # Wait between requests for rate limiting
+        if i < 4:
+            time.sleep(5)
     
     # Print final stats
     print(f"\n📊 Final Cache Stats:")
