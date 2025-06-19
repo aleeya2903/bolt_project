@@ -1,20 +1,6 @@
-import  { useState } from 'react';
-import { Shuffle, Copy, RotateCcw, Zap } from 'lucide-react';
+import  { useState, useEffect } from 'react';
+import { Shuffle, Copy, RotateCcw, Zap, Clock, TrendingUp } from 'lucide-react';
 
-// Add this new interface for Reddit API responses
-interface RedditRantResponse {
-  success: boolean;
-  rant: {
-    title: string;
-    content: string;
-    subreddit: string; 
-    score: number;
-    url: string;
-  };
-  using_live_data: boolean;
-}
-
-// New interface for the combined rant-and-poem API
 interface RantAndPoemResponse {
   success: boolean;
   rant: {
@@ -26,7 +12,24 @@ interface RantAndPoemResponse {
   };
   poem: string | null;
   poem_error?: string;
+  error?: string;
   using_live_data: boolean;
+  cached?: boolean;
+  is_ai?: boolean;
+  response_time_ms?: number;
+  generated_at?: string;
+}
+
+// Cache stats interface
+interface CacheStats {
+  cache_size: number;
+  cache_hits: number;
+  cache_misses: number;
+  hit_ratio_percent: number;
+  total_requests: number;
+  generation_successes: number;
+  generation_failures: number;
+  last_generated: string | null;
 }
 
 // Update your existing RantData interface to include source
@@ -36,56 +39,38 @@ interface RantData {
   poem: string;
   source?: string;
   isAI?: boolean; // Add this to track if poem is AI-generated
+  cached?: boolean; // Track if served from cache
+  responseTime?: number; // Track response time
+  generatedAt?: string; // When the content was generated
 }
-
-const hardcodedRants: RantData[] = [
-  {
-    id: 1,
-    rant: "WHY DO PEOPLE WALK SO SLOW IN HALLWAYS?! Like seriously, it's not a leisurely stroll through the park, it's a HALLWAY! Some of us have places to be! And don't even get me started on people who suddenly stop right in front of you to check their phone. MOVE TO THE SIDE! This is basic hallway etiquette people!!!",
-    poem: "Oh wanderers of the narrow way,\nWhy must you dawdle, why delay?\nThe hallway calls for urgent stride,\nNot meandering side to side.\n\nYour phone can wait, dear friend so slow,\nStep aside and let us go!\nFor some of us have dreams to chase,\nNot snails to match in this small space."
-  },
-  {
-    id: 2,
-    rant: "I CANNOT be the only one who thinks pineapple on pizza is actually AMAZING and everyone who disagrees is just following the crowd! It's sweet, it's tangy, it balances the salt from the cheese perfectly! But nooooo, everyone acts like I committed a war crime when I order Hawaiian pizza. IT'S JUST FRUIT, PEOPLE!",
-    poem: "Upon the dough of golden wheat,\nLies fruit both tangy and so sweet.\nThe crowd may scream, the masses roar,\nBut pineapple's what pizza's for!\n\nSweet rings of joy on melted cheese,\nA taste that puts my soul at ease.\nLet others judge and point with shame,\nI'll eat my Hawaiian just the same!"
-  },
-  {
-    id: 3,
-    rant: "Can we talk about people who don't use turn signals?! IT'S LITERALLY ONE FINGER MOVEMENT! Just flick the little stick! That's it! But apparently it's too much effort for some people. I'm not a mind reader! I don't know if you're turning left, right, or just really bad at staying in your lane!",
-    poem: "One finger's flick, one simple motion,\nCould save us all from road commotion.\nBut drivers sail without a sign,\nLeaving chaos in their line.\n\nNo crystal ball have I to see,\nWhich way your car intends to flee.\nSo signal forth, dear road companion,\nAnd end this tragic driving canon!"
-  },
-  {
-    id: 4,
-    rant: "STOP LEAVING YOUR DISHES IN THE SINK! It's not a magical fairy kingdom where dishes clean themselves! You used it, you wash it! I'm not your personal dishwasher! And while we're at it, PUT THE TOILET SEAT DOWN! It's called basic human decency!",
-    poem: "In kitchen sinks across the land,\nDirty dishes make their stand.\nNo fairy godmother will appear,\nTo make your mess just disappear.\n\nSo wash your plate and clean your cup,\nAnd put that toilet seat back up!\nFor courtesy costs nothing, friend,\nOn this we all can depend."
-  },
-  {
-    id: 5,
-    rant: "Why do people blast music on public transportation?! WE DON'T ALL WANT TO HEAR YOUR TERRIBLE PLAYLIST! Get some headphones! They cost like $5! But no, apparently everyone on the bus needs to experience your questionable music taste at maximum volume!",
-    poem: "On buses, trains, and subway cars,\nYour music travels near and far.\nBut fellow travelers did not choose,\nTo hear your beats and rhythm blues.\n\nSo spare us from your sonic art,\nAnd keep your playlist close to heart.\nWith headphones snug upon your ears,\nYou'll save us all from musical tears."
-  },
-  {
-    id: 6,
-    rant: "PEOPLE WHO CHEW WITH THEIR MOUTH OPEN! It's like listening to a cow eating grass! CLOSE YOUR MOUTH! Were you raised by wolves?! The sound is absolutely disgusting and I can see your food! Nobody wants to witness your digestive process in action!",
-    poem: "Oh masters of the open jaw,\nYour chewing breaks decorum's law.\nThe sounds you make while eating food,\nAre really quite incredibly rude.\n\nSo close your lips and chew with grace,\nAnd spare us from your dinner's face.\nFor dining should be seen, not heard,\nThis wisdom should be widely shared."
-  },
-  {
-    id: 7,
-    rant: "STOP TALKING DURING MOVIES! I paid $15 to watch this film, not to hear your running commentary! If you want to have a conversation, GO TO A COFFEE SHOP! The rest of us are trying to follow the plot! And PUT YOUR PHONE AWAY! The screen is brighter than the sun!",
-    poem: "In theaters dark where stories play,\nSome folks forget the proper way.\nThey chat and text throughout the show,\nWhile others wish that they would go.\n\nSo silence phones and still your tongue,\nLet cinema songs be properly sung.\nFor movies are a sacred space,\nWhere stories unfold with quiet grace."
-  },
-  {
-    id: 8,
-    rant: "Why do people take FOREVER at ATMs?! It's not rocket science! Put in your card, enter your PIN, get your money, LEAVE! But no, some people treat it like they're filing their taxes! There's a line of people behind you! HURRY UP!",
-    poem: "At ATMs across the nation,\nSome folks cause great frustration.\nThey ponder long at money machines,\nWhile others wait behind the scenes.\n\nSo know your PIN and make it quick,\nDon't make the waiting line feel sick.\nFor banking should be swift and neat,\nTo keep the flow of commerce sweet."
-  }
-];
 
 function App() {
   const [currentRant, setCurrentRant] = useState<RantData | null>(null);
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinCount, setSpinCount] = useState(0);
   const [copiedText, setCopiedText] = useState<string>('');
+  const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
+  const [performanceMode, setPerformanceMode] = useState<'normal' | 'fast'>('normal');
+  
+  // Fetch cache stats on component mount and periodically
+  useEffect(() => {
+    const fetchCacheStats = async () => {
+      try {
+        const response = await fetch('http://localhost:5001/api/cache/stats');
+        if (response.ok) {
+          const data = await response.json();
+          setCacheStats(data.cache_stats);
+        }
+      } catch (error) {
+        console.log('Cache stats not available:', error);
+      }
+    };
+    
+    fetchCacheStats();
+    const interval = setInterval(fetchCacheStats, 10000); // Update every 10 seconds
+    
+    return () => clearInterval(interval);
+  }, []);
   
   // Fallback simple poem generator (only used if AI fails)
   const generateSimplePoem = (rantText: string): string => {
@@ -116,16 +101,21 @@ Lies poetry for all the world to see.`
 
   const spinRant = async () => {
     setIsSpinning(true);
+    const startTime = performance.now();
     
     try {
-      // Try to fetch rant AND poem from our new AI-powered endpoint
-      const response = await fetch('http://localhost:5001/api/rant-and-poem');
+      // Choose endpoint based on performance mode
+      const endpoint = performanceMode === 'fast' 
+        ? 'http://localhost:5001/api/rant-and-poem-fast'  // Ultra-fast, cache-only
+        : 'http://localhost:5001/api/rant-and-poem';      // Fast with fallback
+      
+      const response = await fetch(endpoint);
       const data: RantAndPoemResponse = await response.json();
       
       if (data.success && data.rant) {
         const rant = data.rant;
         let poem = data.poem;
-        let isAI = true;
+        let isAI = data.is_ai || false;
         
         // If AI poem generation failed, use our fallback
         if (!poem || data.poem_error) {
@@ -134,25 +124,53 @@ Lies poetry for all the world to see.`
           isAI = false;
         }
         
+        const endTime = performance.now();
+        const clientResponseTime = endTime - startTime;
+        
         setCurrentRant({
           id: Date.now(),
           rant: `${rant.title}\n\n${rant.content}`,
           poem: poem,
           source: `r/${rant.subreddit} • ${rant.score} upvotes`,
-          isAI: isAI
+          isAI: isAI,
+          cached: data.cached || false,
+          responseTime: data.response_time_ms || clientResponseTime,
+          generatedAt: data.generated_at
         });
+        
+        // Update cache stats after successful request
+        if (cacheStats) {
+          setCacheStats(prev => prev ? {
+            ...prev,
+            cache_hits: data.cached ? prev.cache_hits + 1 : prev.cache_hits,
+            cache_misses: !data.cached ? prev.cache_misses + 1 : prev.cache_misses,
+            total_requests: prev.total_requests + 1
+          } : null);
+        }
+        
       } else {
-        throw new Error('API returned no rant data');
+        throw new Error(data.error || 'API returned no rant data');
       }
     } catch (error) {
       console.error('API Error:', error);
+      
       // Ultimate fallback to hardcoded rants
+      const hardcodedRants: RantData[] = [
+        {
+          id: 1,
+          rant: "WHY DO PEOPLE WALK SO SLOW IN HALLWAYS?! Like seriously, it's not a leisurely stroll through the park, it's a HALLWAY! Some of us have places to be! And don't even get me started on people who suddenly stop right in front of you to check their phone. MOVE TO THE SIDE! This is basic hallway etiquette people!!!",
+          poem: "Oh wanderers of the narrow way,\nWhy must you dawdle, why delay?\nThe hallway calls for urgent stride,\nNot meandering side to side.\n\nYour phone can wait, dear friend so slow,\nStep aside and let us go!\nFor some of us have dreams to chase,\nNot snails to match in this small space.",
+          isAI: false,
+          cached: false
+        }
+      ];
+      
       const randomIndex = Math.floor(Math.random() * hardcodedRants.length);
       const fallbackRant = hardcodedRants[randomIndex];
       setCurrentRant({
         ...fallbackRant,
-        source: 'Sample Data',
-        isAI: false
+        source: 'Sample Data (API Unavailable)',
+        responseTime: performance.now() - startTime
       });
     }
     
@@ -176,6 +194,10 @@ Lies poetry for all the world to see.`
     setCopiedText('');
   };
 
+  const togglePerformanceMode = () => {
+    setPerformanceMode(prev => prev === 'normal' ? 'fast' : 'normal');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4">
       {/* Header */}
@@ -184,16 +206,46 @@ Lies poetry for all the world to see.`
           REDDIT RANT ROULETTE
         </h1>
         <p className="text-xl md:text-2xl text-gray-300 font-bold">
-          Turn Internet Rage into Poetry! 🎭
+          Turn Internet Rage into Poetry with AI! 🎭
         </p>
         
-        {/* Spin counter */}
-        {spinCount > 0 && (
-          <div className="text-lg text-yellow-400 font-bold mt-4">
-            Spins: {spinCount} 🎰
-          </div>
-        )}
+        {/* Spin counter and performance info */}
+        <div className="flex justify-center items-center gap-4 mt-4">
+          {spinCount > 0 && (
+            <div className="text-lg text-yellow-400 font-bold">
+              Spins: {spinCount} 🎰
+            </div>
+          )}
+          {currentRant?.responseTime && (
+            <div className="text-lg text-cyan-400 font-bold flex items-center gap-1">
+              <Clock className="w-4 h-4" />
+              {Math.round(currentRant.responseTime)}ms
+              {currentRant.cached && <span className="text-green-400">⚡</span>}
+            </div>
+          )}
+        </div>
       </header>
+
+      {/* Performance Mode Toggle */}
+      <div className="max-w-4xl mx-auto mb-6 text-center">
+        <button
+          onClick={togglePerformanceMode}
+          className={`px-6 py-2 rounded-full font-bold transition-all duration-200 ${
+            performanceMode === 'fast'
+              ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white'
+              : 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
+          }`}
+        >
+          <TrendingUp className="w-4 h-4 inline mr-2" />
+          {performanceMode === 'fast' ? '⚡ ULTRA-FAST MODE' : '🚀 NORMAL MODE'}
+        </button>
+        <p className="text-sm text-gray-400 mt-2">
+          {performanceMode === 'fast' 
+            ? 'Cache-only for guaranteed instant response' 
+            : 'Fast with AI fallback if cache is empty'
+          }
+        </p>
+      </div>
 
       {/* Main Controls */}
       <div className="max-w-4xl mx-auto mb-8">
@@ -260,6 +312,19 @@ Lies poetry for all the world to see.`
                 📍 Source: {currentRant.source}
               </p>
             )}
+            {/* Performance indicators */}
+            <div className="flex gap-2 mt-2">
+              {currentRant.cached && (
+                <span className="text-green-300 text-xs font-bold bg-green-500/20 px-2 py-1 rounded">
+                  ⚡ CACHED
+                </span>
+              )}
+              {currentRant.responseTime && (
+                <span className="text-cyan-300 text-xs font-bold bg-cyan-500/20 px-2 py-1 rounded">
+                  🚀 {Math.round(currentRant.responseTime)}ms
+                </span>
+              )}
+            </div>
             {copiedText === 'rant' && (
               <p className="text-yellow-300 text-sm mt-2 font-bold animate-pulse">
                 ✨ Rant copied to clipboard!
@@ -296,6 +361,11 @@ Lies poetry for all the world to see.`
                 📝 Template-generated (AI unavailable)
               </p>
             )}
+            {currentRant.generatedAt && (
+              <p className="text-gray-300 text-xs mt-1">
+                Generated: {new Date(currentRant.generatedAt).toLocaleTimeString()}
+              </p>
+            )}
             {copiedText === 'poem' && (
               <p className="text-yellow-300 text-sm mt-2 font-bold animate-pulse">
                 ✨ Poem copied to clipboard!
@@ -314,7 +384,7 @@ Lies poetry for all the world to see.`
               🎰 SPINNING THE WHEEL OF RAGE... 🎰
             </p>
             <p className="text-lg text-gray-200 mt-2">
-              🤖 AI is crafting your poetry...
+              {performanceMode === 'fast' ? '⚡ Ultra-fast mode...' : '🤖 AI is crafting your poetry...'}
             </p>
           </div>
         </div>
@@ -331,7 +401,7 @@ Lies poetry for all the world to see.`
               Click the button above to generate a random internet rant and watch AI transform it into beautiful poetry!
             </p>
             <p className="text-lg text-gray-300 font-medium">
-              🤖 Powered by Mistral-7B AI • 📚 Live Reddit data
+              🤖 Powered by Mistral-7B AI • 📚 Live Reddit data • ⚡ High-performance caching
             </p>
           </div>
         </div>
@@ -340,7 +410,7 @@ Lies poetry for all the world to see.`
       {/* Footer */}
       <footer className="text-center mt-12 text-gray-400">
         <p className="text-lg font-bold">
-          Made with 💀 and ☕ for maximum internet chaos
+          Made with 💀, ☕, and 🤖 for maximum internet chaos
         </p>
       </footer>
     </div>
