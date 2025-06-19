@@ -37,7 +37,7 @@ OUTPUT ONLY THE POEM - NO OTHER TEXT."""
 
         # Generate content using Gemini
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model="gemini-2.5-flash-lite-preview-06-17",
             contents=prompt
         )
         
