@@ -1,6 +1,9 @@
 import  { useState, useEffect } from 'react';
 import { Shuffle, Copy, RotateCcw, Zap, Clock, TrendingUp } from 'lucide-react';
 
+// API Configuration - will use environment variable or fallback to localhost
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001';
+
 interface RantAndPoemResponse {
   success: boolean;
   rant: {
@@ -56,7 +59,7 @@ function App() {
   useEffect(() => {
     const fetchCacheStats = async () => {
       try {
-        const response = await fetch('http://localhost:5001/api/cache/stats');
+        const response = await fetch(`${API_BASE_URL}/api/cache/stats`);
         if (response.ok) {
           const data = await response.json();
           setCacheStats(data.cache_stats);
@@ -67,7 +70,7 @@ function App() {
     };
     
     fetchCacheStats();
-    const interval = setInterval(fetchCacheStats, 10000); // Update every 10 seconds
+    const interval = setInterval(fetchCacheStats, 10000);
     
     return () => clearInterval(interval);
   }, []);
@@ -106,8 +109,8 @@ Lies poetry for all the world to see.`
     try {
       // Choose endpoint based on performance mode
       const endpoint = performanceMode === 'fast' 
-        ? 'http://localhost:5001/api/rant-and-poem-fast'  // Ultra-fast, cache-only
-        : 'http://localhost:5001/api/rant-and-poem';      // Fast with fallback
+        ? `${API_BASE_URL}/api/rant-and-poem-fast`  // Ultra-fast, cache-only
+        : `${API_BASE_URL}/api/rant-and-poem`;      // Fast with fallback
       
       const response = await fetch(endpoint);
       const data: RantAndPoemResponse = await response.json();
