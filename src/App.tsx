@@ -212,7 +212,7 @@ Lies poetry for all the world to see.`
         className="fixed top-4 right-4 z-50"
       >
         <img
-          src="/bolt_project/bolt-badge-white.png"
+          src="/bolt-badge-white.png"
           alt="Built with Bolt.new"
           className="w-16 md:w-20 hover:scale-105 transition-transform duration-200"
         />
