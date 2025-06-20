@@ -203,6 +203,21 @@ Lies poetry for all the world to see.`
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4">
+      
+      {/* 🔥 Bolt.new Badge */}
+      <a
+        href="https://bolt.new"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed top-4 right-4 z-50"
+      >
+        <img
+          src="/bolt-badge-white.png"
+          alt="Built with Bolt.new"
+          className="w-16 md:w-20 hover:scale-105 transition-transform duration-200"
+        />
+      </a>
+      
       {/* Header */}
       <header className="text-center mb-8">
         <h1 className="text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-pink-500 to-cyan-400 mb-4 animate-pulse">
